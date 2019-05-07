@@ -171,16 +171,9 @@ func (Command) Main(args ...string) error {
 				uintptr(0))
 		}
 
-		var savedStdin, savedDev syscall.Termios
+		var savedDev syscall.Termios
 
 		_, _, errno := syscall.Syscall(syscall.SYS_IOCTL,
-			uintptr(syscall.Stdin),
-			uintptr(syscall.TCGETS),
-			uintptr(unsafe.Pointer(&savedStdin)))
-		if errno != 0 {
-			return fmt.Errorf("TCGETS: stdin: %v", errno)
-		}
-		_, _, errno = syscall.Syscall(syscall.SYS_IOCTL,
 			uintptr(dev.Fd()),
 			uintptr(syscall.TCGETS),
 			uintptr(unsafe.Pointer(&savedDev)))
@@ -188,10 +181,6 @@ func (Command) Main(args ...string) error {
 			return fmt.Errorf("TCGETS: %s: %v", args[0], errno)
 		}
 		defer func() {
-			syscall.Syscall(syscall.SYS_IOCTL,
-				uintptr(syscall.Stdin),
-				uintptr(syscall.TCSETS),
-				uintptr(unsafe.Pointer(&savedStdin)))
 			if !flag.ByName["-noinit"] && !flag.ByName["-noreset"] {
 				syscall.Syscall(syscall.SYS_IOCTL,
 					uintptr(dev.Fd()),
@@ -222,30 +211,6 @@ func (Command) Main(args ...string) error {
 				syscall.CLOCAL
 			_, _, errno = syscall.Syscall(syscall.SYS_IOCTL,
 				uintptr(dev.Fd()),
-				uintptr(syscall.TCSETS),
-				uintptr(unsafe.Pointer(&t)))
-			if errno != 0 {
-				return fmt.Errorf("TCSETS: %v", errno)
-			}
-		}
-		{
-			t := savedStdin
-			t.Iflag &^= syscall.IGNBRK |
-				syscall.BRKINT |
-				syscall.PARMRK |
-				syscall.ISTRIP |
-				syscall.INLCR |
-				syscall.IGNCR |
-				syscall.ICRNL |
-				syscall.IXON
-			t.Oflag &^= syscall.OPOST
-			t.Lflag &^= syscall.ECHO |
-				syscall.ECHONL |
-				syscall.ICANON |
-				syscall.ISIG |
-				syscall.IEXTEN
-			_, _, errno = syscall.Syscall(syscall.SYS_IOCTL,
-				uintptr(syscall.Stdin),
 				uintptr(syscall.TCSETS),
 				uintptr(unsafe.Pointer(&t)))
 			if errno != 0 {
