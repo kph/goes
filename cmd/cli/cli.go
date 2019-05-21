@@ -9,6 +9,9 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"syscall"
+
+	"github.com/mattn/go-isatty"
 
 	"github.com/platinasystems/flags"
 	"github.com/platinasystems/goes"
@@ -181,6 +184,31 @@ func (c *Command) Main(args ...string) error {
 	csig := make(chan os.Signal, 1)
 	signal.Notify(csig, os.Interrupt)
 
+	if isatty.IsTerminal(uintptr(syscall.Stdin)) {
+		fd, err := syscall.Dup(syscall.Stdin)
+		if err != nil {
+			fmt.Fprintf(os.Stderr,
+				"Error in Dup setting up job control: %s\n",
+				err)
+		} else {
+			// Wait to be in foreground
+			//for tcgetpgrp (shell_terminal) != (shell_pgid = getpgrp ()))
+			// kill (- shell_pgid, SIGTTIN);
+			pid := syscall.Getpid()
+			err = syscall.Setpgid(pid, pid)
+			if err != nil {
+				fmt.Fprintf(os.Stderr,
+					"Error in Setpgid setting up job control: %s\n",
+					err)
+			} else {
+				signal.Ignore(syscall.SIGQUIT,
+					syscall.SIGTSTP, syscall.SIGTTIN,
+					syscall.SIGTTOU, syscall.SIGCHLD)
+				c.g.TtyFd = fd
+				// to do: save terminal settings
+			}
+		}
+	}
 	defer func() {
 		for _, name := range c.g.Names() {
 			v := c.g.ByName[name]
@@ -240,8 +268,8 @@ func (c *Command) Main(args ...string) error {
 readCommandLoop:
 	for {
 		select {
-		case <-csig:
-			fmt.Println("\nCommand interrupted")
+		case s := <-csig:
+			fmt.Printf("\nCommand interrupted, signal %v\n", s)
 		default:
 		}
 		prompt := c.Prompt

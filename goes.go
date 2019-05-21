@@ -22,14 +22,15 @@ import (
 	"syscall"
 	"time"
 	"unicode/utf8"
+	"unsafe"
 
 	"github.com/platinasystems/flags"
 	"github.com/platinasystems/goes/cmd"
 	"github.com/platinasystems/goes/internal/prog"
 	"github.com/platinasystems/goes/internal/shellutils"
-	"github.com/platinasystems/url"
 	"github.com/platinasystems/goes/lang"
 	"github.com/platinasystems/parms"
+	"github.com/platinasystems/url"
 )
 
 const (
@@ -67,6 +68,7 @@ type Goes struct {
 	EnvMap map[string]string
 
 	FunctionMap map[string]Function
+	TtyFd       int
 }
 
 type Function struct {
@@ -82,6 +84,7 @@ func (g *Goes) ProcessPipeline(ls shellutils.List) (*shellutils.List, *shellutil
 	)
 	isLast := false
 	pipeline := make([]func(io.Reader, io.Writer, io.Writer, bool, bool) error, 0)
+	pgid := 0
 	for len(ls.Cmds) != 0 && !isLast {
 		cl := ls.Cmds[0]
 		term = cl.Term
@@ -113,7 +116,7 @@ func (g *Goes) ProcessPipeline(ls shellutils.List) (*shellutils.List, *shellutil
 				continue
 			}
 		}
-		runfun, err := g.ProcessCommand(cl, &closers)
+		runfun, err := g.ProcessCommand(cl, &pgid, &closers)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -125,7 +128,7 @@ func (g *Goes) ProcessPipeline(ls shellutils.List) (*shellutils.List, *shellutil
 	return &ls, &term, pipefun, err
 }
 
-func (g *Goes) ProcessCommand(cl shellutils.Cmdline, closers *[]io.Closer) (func(stdin io.Reader, stdout io.Writer, stderr io.Writer, isFirst bool, isLast bool) error, error) {
+func (g *Goes) ProcessCommand(cl shellutils.Cmdline, pgid *int, closers *[]io.Closer) (func(stdin io.Reader, stdout io.Writer, stderr io.Writer, isFirst bool, isLast bool) error, error) {
 	runfun := func(stdin io.Reader, stdout io.Writer, stderr io.Writer, isFirst bool, isLast bool) error {
 		envMap, args := cl.Slice(func(k string) string {
 			v, def := g.EnvMap[k]
@@ -274,14 +277,31 @@ func (g *Goes) ProcessCommand(cl shellutils.Cmdline, closers *[]io.Closer) (func
 		x.Stdin = in
 		x.Stdout = out
 		x.Stderr = stderr
-
+		if g.TtyFd != 0 {
+			x.SysProcAttr = &syscall.SysProcAttr{
+				Setpgid:    true,
+				Foreground: true,
+				Pgid:       *pgid,
+				Ctty:       g.TtyFd,
+			}
+		}
 		if err := x.Start(); err != nil {
 			err = fmt.Errorf("child: %v: %v", x.Args, err)
 			return err
 		}
+		if *pgid == 0 {
+			*pgid = x.Process.Pid
+		}
 		if isLast {
 			err := x.Wait()
 			g.Status = err
+			if g.TtyFd != 0 {
+				pgid, _ := syscall.Getpgid(0)
+				_, _, _ = syscall.Syscall(syscall.SYS_IOCTL,
+					uintptr(g.TtyFd),
+					uintptr(syscall.TIOCSPGRP),
+					uintptr(unsafe.Pointer(&pgid)))
+			}
 		} else {
 			go func(x *exec.Cmd) {
 				err := x.Wait()
