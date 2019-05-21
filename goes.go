@@ -21,6 +21,7 @@ import (
 	"sync"
 	"syscall"
 	"unicode/utf8"
+	"unsafe"
 
 	"github.com/platinasystems/goes/cmd"
 	"github.com/platinasystems/goes/external/flags"
@@ -71,6 +72,8 @@ type Goes struct {
 	FunctionMap map[string]Function
 
 	inTest bool
+
+	TtyFd int
 }
 
 type Function struct {
@@ -108,6 +111,7 @@ func (g *Goes) ProcessPipeline(ls shellutils.List) (*shellutils.List, *shellutil
 	)
 	isLast := false
 	pipeline := make([]func(io.Reader, io.Writer, io.Writer) error, 0)
+	pgid := 0
 	for len(ls.Cmds) != 0 && !isLast {
 		cl := ls.Cmds[0]
 		term = cl.Term
@@ -139,7 +143,7 @@ func (g *Goes) ProcessPipeline(ls shellutils.List) (*shellutils.List, *shellutil
 				continue
 			}
 		}
-		runfun, err := g.ProcessCommand(cl, &closers)
+		runfun, err := g.ProcessCommand(cl, &pgid, &closers)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -186,7 +190,7 @@ func (g *Goes) isRedirected(stdin io.Reader, stdout io.Writer, stderr io.Writer)
 		g.isStderrRedirected(stderr)
 }
 
-func (g *Goes) ProcessCommand(cl shellutils.Cmdline, closers *[]io.Closer) (func(stdin io.Reader, stdout io.Writer, stderr io.Writer) error, error) {
+func (g *Goes) ProcessCommand(cl shellutils.Cmdline, pgid *int, closers *[]io.Closer) (func(stdin io.Reader, stdout io.Writer, stderr io.Writer) error, error) {
 	runfun := func(stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
 		envMap, args := cl.Slice(func(k string) string {
 			v, def := g.EnvMap[k]
@@ -340,16 +344,34 @@ func (g *Goes) ProcessCommand(cl shellutils.Cmdline, closers *[]io.Closer) (func
 		x.Stdin = in
 		x.Stdout = out
 		x.Stderr = stderr
-
+		if g.TtyFd != 0 {
+			x.SysProcAttr = &syscall.SysProcAttr{
+				Setpgid:    true,
+				Foreground: true,
+				Pgid:       *pgid,
+				Ctty:       g.TtyFd,
+			}
+		}
 		if err := x.Start(); err != nil {
 			err = fmt.Errorf("child: %v: %v", x.Args, err)
 			return err
+		}
+
+		if *pgid == 0 {
+			*pgid = x.Process.Pid
 		}
 		if !g.isStdoutRedirected(stdout) { // fixme not a pipe
 			err := x.Wait()
 			g.Status = err
 			if err != nil {
 				fmt.Fprintln(os.Stderr, err)
+			}
+			if g.TtyFd != 0 {
+				pgid, _ := syscall.Getpgid(0)
+				_, _, _ = syscall.Syscall(syscall.SYS_IOCTL,
+					uintptr(g.TtyFd),
+					uintptr(syscall.TIOCSPGRP),
+					uintptr(unsafe.Pointer(&pgid)))
 			}
 		} else {
 			WG.Add(1)
