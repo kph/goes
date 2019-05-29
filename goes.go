@@ -69,6 +69,7 @@ type Goes struct {
 
 	FunctionMap map[string]Function
 	TtyFd       int
+	Csig        chan os.Signal
 }
 
 type Function struct {
@@ -296,11 +297,13 @@ func (g *Goes) ProcessCommand(cl shellutils.Cmdline, pgid *int, closers *[]io.Cl
 			err := x.Wait()
 			g.Status = err
 			if g.TtyFd != 0 {
+				//s := <-g.Csig
 				pgid, _ := syscall.Getpgid(0)
 				_, _, _ = syscall.Syscall(syscall.SYS_IOCTL,
 					uintptr(g.TtyFd),
 					uintptr(syscall.TIOCSPGRP),
 					uintptr(unsafe.Pointer(&pgid)))
+				//fmt.Printf("\nCommand returned signal %v\n", s)
 			}
 		} else {
 			go func(x *exec.Cmd) {

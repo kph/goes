@@ -181,8 +181,10 @@ func (c *Command) Main(args ...string) error {
 		panic("cli's goes is nil")
 	}
 
-	csig := make(chan os.Signal, 1)
-	signal.Notify(csig, os.Interrupt)
+	c.g.Csig = make(chan os.Signal, 1)
+	signal.Notify(c.g.Csig, os.Interrupt, syscall.SIGSTOP, syscall.SIGTSTP,
+		syscall.SIGCHLD, syscall.SIGQUIT, syscall.SIGTTIN,
+		syscall.SIGTTOU)
 
 	if isatty.IsTerminal(uintptr(syscall.Stdin)) {
 		fd, err := syscall.Dup(syscall.Stdin)
@@ -195,15 +197,24 @@ func (c *Command) Main(args ...string) error {
 			//for tcgetpgrp (shell_terminal) != (shell_pgid = getpgrp ()))
 			// kill (- shell_pgid, SIGTTIN);
 			pid := syscall.Getpid()
-			err = syscall.Setpgid(pid, pid)
+			pgid, err := syscall.Getpgid(pid)
 			if err != nil {
-				fmt.Fprintf(os.Stderr,
-					"Error in Setpgid setting up job control: %s\n",
+				fmt.Fprintf(os.Stderr, "Error in Getpgid: %s\n",
 					err)
 			} else {
+				if pid != pgid {
+					err = syscall.Setpgid(pid, pid)
+					if err != nil {
+						fmt.Fprintf(os.Stderr,
+							"Error in Setpgid setting up job control: %s\n",
+							err)
+					}
+				}
+			}
+			if err == nil {
 				signal.Ignore(syscall.SIGQUIT,
-					syscall.SIGTSTP, syscall.SIGTTIN,
-					syscall.SIGTTOU, syscall.SIGCHLD)
+					syscall.SIGTTIN,
+					syscall.SIGTTOU)
 				c.g.TtyFd = fd
 				// to do: save terminal settings
 			}
@@ -268,7 +279,7 @@ func (c *Command) Main(args ...string) error {
 readCommandLoop:
 	for {
 		select {
-		case s := <-csig:
+		case s := <-c.g.Csig:
 			fmt.Printf("\nCommand interrupted, signal %v\n", s)
 		default:
 		}
