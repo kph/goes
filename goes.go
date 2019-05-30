@@ -362,7 +362,9 @@ func (g *Goes) ProcessCommand(cl shellutils.Cmdline, pgid *int, closers *[]io.Cl
 			*pgid = x.Process.Pid
 		}
 		if !g.isStdoutRedirected(stdout) { // fixme not a pipe
-			err := x.Wait()
+			var ws syscall.WaitStatus
+			wpid, err := syscall.Wait4(*pgid, &ws,
+				syscall.WUNTRACED, nil)
 			g.Status = err
 			if err != nil {
 				fmt.Fprintln(os.Stderr, err)
@@ -374,7 +376,8 @@ func (g *Goes) ProcessCommand(cl shellutils.Cmdline, pgid *int, closers *[]io.Cl
 					uintptr(g.TtyFd),
 					uintptr(syscall.TIOCSPGRP),
 					uintptr(unsafe.Pointer(&pgid)))
-				//fmt.Printf("\nCommand returned signal %v\n", s)
+				fmt.Printf("\nCommand returned wpid %d err %s ws %v\n",
+					wpid, err, ws)
 			}
 		} else {
 			WG.Add(1)
