@@ -294,7 +294,9 @@ func (g *Goes) ProcessCommand(cl shellutils.Cmdline, pgid *int, closers *[]io.Cl
 			*pgid = x.Process.Pid
 		}
 		if isLast {
-			err := x.Wait()
+			var ws syscall.WaitStatus
+			wpid, err := syscall.Wait4(*pgid, &ws,
+				syscall.WUNTRACED, nil)
 			g.Status = err
 			if g.TtyFd != 0 {
 				//s := <-g.Csig
@@ -303,7 +305,8 @@ func (g *Goes) ProcessCommand(cl shellutils.Cmdline, pgid *int, closers *[]io.Cl
 					uintptr(g.TtyFd),
 					uintptr(syscall.TIOCSPGRP),
 					uintptr(unsafe.Pointer(&pgid)))
-				//fmt.Printf("\nCommand returned signal %v\n", s)
+				fmt.Printf("\nCommand returned wpid %d err %s ws %v\n",
+					wpid, err, ws)
 			}
 		} else {
 			go func(x *exec.Cmd) {
