@@ -220,6 +220,16 @@ func (c *Command) Main(args ...string) error {
 	//		syscall.SIGTTIN,
 	//		syscall.SIGTTOU,
 	//	)
+	signal.Notify(c.g.Csig,
+		os.Interrupt,
+		syscall.SIGQUIT,
+		syscall.SIGSTOP,
+		syscall.SIGCHLD,
+		syscall.SIGSTOP,
+		syscall.SIGTSTP,
+		syscall.SIGTTIN,
+		syscall.SIGTTOU,
+	)
 
 	if isatty.IsTerminal(uintptr(syscall.Stdin)) {
 		fd, err := syscall.Dup(syscall.Stdin)
