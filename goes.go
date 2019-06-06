@@ -405,18 +405,20 @@ func (g *Goes) ProcessCommand(cl shellutils.Cmdline, pg *processGroup, closers *
 					if ws.Stopped() {
 						break
 					}
-					if pe.x.Stdout != os.Stdout {
-						m, found := pe.x.Stdout.(io.Closer)
-						if found {
-							m.Close()
+					if ws.Exited() {
+						if pe.x.Stdout != os.Stdout {
+							m, found := pe.x.Stdout.(io.Closer)
+							if found {
+								m.Close()
+							}
 						}
-					}
-					if pe.x.Stdin != os.Stdin {
-						m, found := pe.x.Stdin.(io.Closer)
-						if found {
-							m.Close()
-						}
+						if pe.x.Stdin != os.Stdin {
+							m, found := pe.x.Stdin.(io.Closer)
+							if found {
+								m.Close()
+							}
 
+						}
 					}
 				}
 				if err != nil {
@@ -434,20 +436,6 @@ func (g *Goes) ProcessCommand(cl shellutils.Cmdline, pg *processGroup, closers *
 					break
 				}
 			}
-			//for _, pe := range pg.pe {
-			//if pe.x.Stdout != os.Stdout {
-			//	m, found := pe.x.Stdout.(io.Closer)
-			//	if found {
-			//		m.Close()
-			//	}
-			//}
-			//if pe.x.Stdin != os.Stdin {
-			//	m, found := pe.x.Stdin.(io.Closer)
-			//	if found {
-			//		m.Close()
-			//	}
-			//}
-			//}
 			if g.TtyFd != 0 {
 				//s := <-g.Csig
 				pgid, _ := syscall.Getpgid(0)
@@ -461,9 +449,9 @@ func (g *Goes) ProcessCommand(cl shellutils.Cmdline, pg *processGroup, closers *
 					g.Status)
 			}
 			for _, pe := range pg.pe {
-				fmt.Printf("PID %d status %v stopped %v\n",
+				fmt.Printf("PID %d status %v stopped %v exited %v\n",
 					pe.x.Process.Pid,
-					pe.ws, pe.ws.Stopped())
+					pe.ws, pe.ws.Stopped(), pe.ws.Exited())
 			}
 		} else {
 			WG.Add(1)
