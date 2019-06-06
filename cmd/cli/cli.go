@@ -211,7 +211,7 @@ func (c *Command) Main(args ...string) error {
 		c.Stderr = os.Stderr
 	}
 	c.g.Csig = make(chan os.Signal, 1)
-	//	signal.Notify(c.g.Csig,
+	//signal.Notify(c.g.Csig,
 	//		os.Interrupt,
 	//		syscall.SIGSTOP,
 	//		syscall.SIGTSTP,
@@ -224,11 +224,11 @@ func (c *Command) Main(args ...string) error {
 		os.Interrupt,
 		syscall.SIGQUIT,
 		syscall.SIGSTOP,
-		syscall.SIGCHLD,
-		syscall.SIGSTOP,
 		syscall.SIGTSTP,
 		syscall.SIGTTIN,
-		syscall.SIGTTOU,
+		//syscall.SIGTTOU,
+		syscall.SIGSTOP,
+		syscall.SIGCHLD,
 	)
 
 	if isatty.IsTerminal(uintptr(syscall.Stdin)) {
@@ -257,15 +257,15 @@ func (c *Command) Main(args ...string) error {
 				}
 			}
 			if err == nil {
-				signal.Ignore(
-					syscall.SIGQUIT,
-					syscall.SIGSTOP,
-					syscall.SIGCHLD,
-					syscall.SIGSTOP,
-					syscall.SIGTSTP,
-					syscall.SIGTTIN,
-					syscall.SIGTTOU,
-				)
+				//signal.Ignore(
+				//	syscall.SIGQUIT,
+				//	syscall.SIGSTOP,
+				//	syscall.SIGCHLD,
+				//	syscall.SIGSTOP,
+				//syscall.SIGTSTP, // not needed
+				//syscall.SIGTTIN, // not needed
+				//syscall.SIGTTOU, //needed for ^c
+				//)
 
 				c.g.TtyFd = fd
 				// to do: save terminal settings
