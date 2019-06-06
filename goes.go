@@ -111,8 +111,8 @@ type processEntry struct {
 }
 
 type processGroup struct {
-	pgid int            // Process group ID
-	pe   []processEntry // List of processes in group
+	pgid int             // Process group ID
+	pe   []*processEntry // List of processes in group
 }
 
 func (g *Goes) ProcessPipeline(ls shellutils.List) (*shellutils.List, *shellutils.Word, func(io.Reader, io.Writer, io.Writer) error, error) {
@@ -122,7 +122,7 @@ func (g *Goes) ProcessPipeline(ls shellutils.List) (*shellutils.List, *shellutil
 	)
 	isLast := false
 	pipeline := make([]func(io.Reader, io.Writer, io.Writer) error, 0)
-	pg := processGroup{pe: make([]processEntry, 0)}
+	pg := processGroup{pe: make([]*processEntry, 0)}
 	for len(ls.Cmds) != 0 && !isLast {
 		cl := ls.Cmds[0]
 		term = cl.Term
@@ -371,7 +371,7 @@ func (g *Goes) ProcessCommand(cl shellutils.Cmdline, pg *processGroup, closers *
 		if pg.pgid == 0 {
 			pg.pgid = x.Process.Pid
 		}
-		pg.pe = append(pg.pe, processEntry{x: x})
+		pg.pe = append(pg.pe, &processEntry{x: x})
 		if !g.isStdoutRedirected(stdout) { // fixme not a pipe
 			_, _, _ = syscall.Syscall(syscall.SYS_IOCTL,
 				uintptr(g.TtyFd),
@@ -393,7 +393,7 @@ func (g *Goes) ProcessCommand(cl shellutils.Cmdline, pg *processGroup, closers *
 				var pe *processEntry
 				for _, peX := range pg.pe {
 					if wpid == peX.x.Process.Pid {
-						pe = &peX
+						pe = peX
 						break
 					}
 				}
@@ -402,6 +402,9 @@ func (g *Goes) ProcessCommand(cl shellutils.Cmdline, pg *processGroup, closers *
 					break
 				} else {
 					pe.ws = ws
+					if ws.Stopped() {
+						break
+					}
 					if pe.x.Stdout != os.Stdout {
 						m, found := pe.x.Stdout.(io.Closer)
 						if found {
@@ -458,9 +461,9 @@ func (g *Goes) ProcessCommand(cl shellutils.Cmdline, pg *processGroup, closers *
 					g.Status)
 			}
 			for _, pe := range pg.pe {
-				fmt.Printf("PID %d status %v\n",
+				fmt.Printf("PID %d status %v stopped %v\n",
 					pe.x.Process.Pid,
-					pe.ws)
+					pe.ws, pe.ws.Stopped())
 			}
 		} else {
 			WG.Add(1)
