@@ -357,16 +357,16 @@ func (g *Goes) ProcessCommand(cl shellutils.Cmdline, pg *processGroup, closers *
 					g.Status = err
 					break
 				}
-				done := true
-				for _, pe := range pg.pe {
-					if pe.ws == 0 {
-						done = false
-						break
-					}
-				}
-				if done {
-					break
-				}
+				//done := true
+				//for _, pe := range pg.pe {
+				//	if pe.ws == 0 {
+				//		done = false
+				//		break
+				//	}
+				//}
+				//if done {
+				//	break
+				//}
 			}
 			if g.TtyFd != 0 {
 				//s := <-g.Csig
