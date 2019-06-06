@@ -81,6 +81,16 @@ type Function struct {
 	RunFun     func(stdin io.Reader, stdout io.Writer, stderr io.Writer) error
 }
 
+type processEntry struct {
+	x  *exec.Cmd          // Pointer to underlying exec.Cmd
+	ws syscall.WaitStatus // Process status
+}
+
+type processGroup struct {
+	pgid int            // Process group ID
+	pe   []processEntry // List of processes in group
+}
+
 func (g *Goes) ProcessPipeline(ls shellutils.List) (*shellutils.List, *shellutils.Word, func(io.Reader, io.Writer, io.Writer) error, error) {
 	var (
 		closers []io.Closer
@@ -88,7 +98,7 @@ func (g *Goes) ProcessPipeline(ls shellutils.List) (*shellutils.List, *shellutil
 	)
 	isLast := false
 	pipeline := make([]func(io.Reader, io.Writer, io.Writer) error, 0)
-	pgid := 0
+	pg := processGroup{pe: make([]processEntry, 0)}
 	for len(ls.Cmds) != 0 && !isLast {
 		cl := ls.Cmds[0]
 		term = cl.Term
@@ -120,7 +130,7 @@ func (g *Goes) ProcessPipeline(ls shellutils.List) (*shellutils.List, *shellutil
 				continue
 			}
 		}
-		runfun, err := g.ProcessCommand(cl, &pgid, &closers)
+		runfun, err := g.ProcessCommand(cl, &pg, &closers)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -167,7 +177,7 @@ func (g *Goes) isRedirected(stdin io.Reader, stdout io.Writer, stderr io.Writer)
 		g.isStderrRedirected(stderr)
 }
 
-func (g *Goes) ProcessCommand(cl shellutils.Cmdline, pgid *int, closers *[]io.Closer) (func(stdin io.Reader, stdout io.Writer, stderr io.Writer) error, error) {
+func (g *Goes) ProcessCommand(cl shellutils.Cmdline, pg *processGroup, closers *[]io.Closer) (func(stdin io.Reader, stdout io.Writer, stderr io.Writer) error, error) {
 	runfun := func(stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
 		envMap, args := cl.Slice(func(k string) string {
 			v, def := g.EnvMap[k]
@@ -322,8 +332,8 @@ func (g *Goes) ProcessCommand(cl shellutils.Cmdline, pgid *int, closers *[]io.Cl
 		if g.TtyFd != 0 {
 			x.SysProcAttr = &syscall.SysProcAttr{
 				Setpgid:    true,
-				Foreground: true,
-				Pgid:       *pgid,
+				Foreground: false,
+				Pgid:       pg.pgid,
 				Ctty:       g.TtyFd,
 			}
 		}
@@ -331,45 +341,102 @@ func (g *Goes) ProcessCommand(cl shellutils.Cmdline, pgid *int, closers *[]io.Cl
 			err = fmt.Errorf("child: %v: %v", x.Args, err)
 			return err
 		}
-		if *pgid == 0 {
-			*pgid = x.Process.Pid
+		if pg.pgid == 0 {
+			pg.pgid = x.Process.Pid
 		}
+		pg.pe = append(pg.pe, processEntry{x: x})
 		if g.isStdoutRedirected(stdout) { // fixme not a pipe
-			var ws syscall.WaitStatus
-			wpid, err := syscall.Wait4(*pgid, &ws,
-				syscall.WUNTRACED, nil)
-			g.Status = err
+			_, _, _ = syscall.Syscall(syscall.SYS_IOCTL,
+				uintptr(g.TtyFd),
+				uintptr(syscall.TIOCSPGRP),
+				uintptr(unsafe.Pointer(&pg.pgid)))
+			_ = syscall.Kill(-pg.pgid, syscall.SIGCONT)
+
+			for {
+				var ws syscall.WaitStatus
+				wpid, err := syscall.Wait4(-pg.pgid, &ws,
+					syscall.WUNTRACED, nil)
+				if err == syscall.ECHILD {
+					break
+				}
+				if err != nil {
+					g.Status = err
+					break
+				}
+				var pe *processEntry
+				for _, peX := range pg.pe {
+					if wpid == peX.x.Process.Pid {
+						pe = &peX
+						break
+					}
+				}
+				if pe == nil {
+					err = fmt.Errorf("Wait4 returned unknown pid %d", wpid)
+					break
+				} else {
+					pe.ws = ws
+					if pe.x.Stdout != os.Stdout {
+						m, found := pe.x.Stdout.(io.Closer)
+						if found {
+							m.Close()
+						}
+					}
+					if pe.x.Stdin != os.Stdin {
+						m, found := pe.x.Stdin.(io.Closer)
+						if found {
+							m.Close()
+						}
+
+					}
+				}
+				if err != nil {
+					g.Status = err
+					break
+				}
+				done := true
+				for _, pe := range pg.pe {
+					if pe.ws == 0 {
+						done = false
+						break
+					}
+				}
+				if done {
+					break
+				}
+			}
+			//for _, pe := range pg.pe {
+			//if pe.x.Stdout != os.Stdout {
+			//	m, found := pe.x.Stdout.(io.Closer)
+			//	if found {
+			//		m.Close()
+			//	}
+			//}
+			//if pe.x.Stdin != os.Stdin {
+			//	m, found := pe.x.Stdin.(io.Closer)
+			//	if found {
+			//		m.Close()
+			//	}
+			//}
+			//}
 			if g.TtyFd != 0 {
 				//s := <-g.Csig
 				pgid, _ := syscall.Getpgid(0)
+				signal.Ignore(syscall.SIGTTOU)
 				_, _, _ = syscall.Syscall(syscall.SYS_IOCTL,
 					uintptr(g.TtyFd),
 					uintptr(syscall.TIOCSPGRP),
 					uintptr(unsafe.Pointer(&pgid)))
-				fmt.Printf("\nCommand returned wpid %d err %s ws %v\n",
-					wpid, err, ws)
+				signal.Notify(g.Csig, syscall.SIGTTOU)
+				fmt.Printf("\nCommand returned err %s\n",
+					g.Status)
 			}
-		} else {
-			go func(x *exec.Cmd) {
-				err := x.Wait()
-				if err != nil {
-					fmt.Fprintln(os.Stderr, err)
-				}
-				if x.Stdout != os.Stdout {
-					m, found := x.Stdout.(io.Closer)
-					if found {
-						m.Close()
-					}
-				}
-				if x.Stdin != os.Stdin {
-					m, found := x.Stdin.(io.Closer)
-					if found {
-						m.Close()
-					}
-				}
-			}(x)
+			for _, pe := range pg.pe {
+				fmt.Printf("PID %d status %v\n",
+					pe.x.Process.Pid,
+					pe.ws)
+			}
 		}
-		return nil
+		return g.Status
 	}
 	return runfun, nil
 }
