@@ -41,7 +41,7 @@ func (c *Command) addHandler(parent string, i int, me menuentry.Entry) {
 		Menuentry.Menus = Menuentry.Menus[:0]
 		ws := &webserver{w: w}
 		io.WriteString(w, `<html>`)
-		err := me.RunFun(ws, ws, ws, false, false)
+		err := me.RunFun(ws, ws, ws)
 		if err != nil {
 			fmt.Fprintf(w, `Menu exit status: %s
 <br>`, html.EscapeString(err.Error()))

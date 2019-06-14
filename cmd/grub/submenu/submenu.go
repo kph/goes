@@ -14,8 +14,8 @@ import (
 	"github.com/platinasystems/goes/lang"
 
 	"github.com/platinasystems/flags"
-	"github.com/platinasystems/parms"
 	"github.com/platinasystems/goes/internal/shellutils"
+	"github.com/platinasystems/parms"
 )
 
 type Command struct {
@@ -42,7 +42,7 @@ func (Command) Man() lang.Alt {
 
 const Man = "NOP command for script compatibility\n"
 
-func (c Command) Block(g *goes.Goes, ls shellutils.List) (*shellutils.List, func(stdin io.Reader, stdout io.Writer, stderr io.Writer, isFirst bool, isLast bool) error, error) {
+func (c Command) Block(g *goes.Goes, ls shellutils.List) (*shellutils.List, func(stdin io.Reader, stdout io.Writer, stderr io.Writer) error, error) {
 	cl := ls.Cmds[0]
 	// submenu name { definition ... ; }
 	if len(cl.Cmds) < 2 {
@@ -106,7 +106,7 @@ func (c Command) Block(g *goes.Goes, ls shellutils.List) (*shellutils.List, func
 	}
 
 	e := menuentry.Entry{Name: name}
-	e.RunFun = func(stdin io.Reader, stdout io.Writer, stderr io.Writer, isFirst bool, isLast bool) error {
+	e.RunFun = func(stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
 		for _, runent := range funList {
 			err := runent(stdin, stdout, stderr)
 			if err != nil {
@@ -116,7 +116,7 @@ func (c Command) Block(g *goes.Goes, ls shellutils.List) (*shellutils.List, func
 		return nil
 	}
 
-	deffun := func(stdin io.Reader, stdout io.Writer, stderr io.Writer, isFirst bool, isLast bool) error {
+	deffun := func(stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
 		c.M.Menus = append(c.M.Menus, e)
 		return nil
 	}

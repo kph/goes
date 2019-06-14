@@ -198,7 +198,7 @@ func (c *Command) RunMenu(m []menuentry.Entry, parm *parms.Parms, flag *flags.Fl
 		}
 		me := m[menuItem]
 		Menuentry.Menus = Menuentry.Menus[:0]
-		err = me.RunFun(os.Stdin, os.Stdout, os.Stderr, false, false)
+		err = me.RunFun(os.Stdin, os.Stdout, os.Stderr)
 		fmt.Printf("Kernel defined: %s\n", Linux.Kern)
 		fmt.Printf("Linux command: %v\n", Linux.Cmd)
 		fmt.Printf("Initrd: %v\n", Initrd.Initrd)
