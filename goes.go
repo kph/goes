@@ -162,7 +162,7 @@ func (g *Goes) ProcessPipeline(ls shellutils.List) (*shellutils.List, *shellutil
 		pipeline = append(pipeline, runfun)
 	}
 
-	pipefun, err := g.MakePipefun(pipeline, &closers)
+	pipefun, err := g.MakePipefun(pipeline, &pg, &closers)
 	return &ls, &term, pipefun, err
 }
 
@@ -372,7 +372,41 @@ func (g *Goes) ProcessCommand(cl shellutils.Cmdline, pg *processGroup, closers *
 			pg.pgid = x.Process.Pid
 		}
 		pg.pe = append(pg.pe, &processEntry{x: x})
-		if !g.isStdoutRedirected(stdout) { // fixme not a pipe
+		return nil
+	}
+	return runfun, nil
+}
+
+func (g *Goes) MakePipefun(pipeline []func(io.Reader, io.Writer, io.Writer) error, pg *processGroup, closers *[]io.Closer) (func(io.Reader, io.Writer, io.Writer) error, error) {
+	pipefun := func(stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
+		var (
+			err error
+			pin *os.File
+		)
+		defer func() {
+			for _, c := range *closers {
+				c.Close()
+			}
+		}()
+		in := stdin
+		end := len(pipeline) - 1
+		for i, runfun := range pipeline {
+			out := stdout
+			if i != end {
+				var pout *os.File
+				pin, pout, err = os.Pipe()
+				if err != nil {
+					break
+				}
+				out = pout
+			}
+			err = runfun(in, out, stderr)
+			if err != nil {
+				break
+			}
+			in = pin
+		}
+		if err == nil {
 			_, _, _ = syscall.Syscall(syscall.SYS_IOCTL,
 				uintptr(g.TtyFd),
 				uintptr(syscall.TIOCSPGRP),
@@ -474,40 +508,6 @@ func (g *Goes) ProcessCommand(cl shellutils.Cmdline, pg *processGroup, closers *
 					}
 				}
 			}(x)
-		}
-		return g.Status
-	}
-	return runfun, nil
-}
-
-func (g *Goes) MakePipefun(pipeline []func(io.Reader, io.Writer, io.Writer) error, closers *[]io.Closer) (func(io.Reader, io.Writer, io.Writer) error, error) {
-	pipefun := func(stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
-		var (
-			err error
-			pin *os.File
-		)
-		defer func() {
-			for _, c := range *closers {
-				c.Close()
-			}
-		}()
-		in := stdin
-		end := len(pipeline) - 1
-		for i, runfun := range pipeline {
-			out := stdout
-			if i != end {
-				var pout *os.File
-				pin, pout, err = os.Pipe()
-				if err != nil {
-					break
-				}
-				out = pout
-			}
-			err = runfun(in, out, stderr)
-			if err != nil {
-				break
-			}
-			in = pin
 		}
 		return err
 	}

@@ -39,7 +39,7 @@ func (c Command) Block(g *goes.Goes, ls shellutils.List) (*shellutils.List, func
 	var ifList, thenList, elseList []func(stdin io.Reader, stdout io.Writer, stderr io.Writer) error
 	curList := &ifList
 	cl := ls.Cmds[0]
-	// if <command>
+	// if <commands>
 	if len(cl.Cmds) > 1 {
 		cl.Cmds = cl.Cmds[1:]
 		ls.Cmds[0] = cl
