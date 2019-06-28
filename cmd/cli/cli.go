@@ -301,6 +301,10 @@ func (c *Command) Main(args ...string) error {
 	}
 readCommandLoop:
 	for {
+		for i, pg := range c.g.Jobs {
+			state, err := goes.WaitForPg(pg, true)
+			fmt.Printf("[%d]  %d %s %s\n", i+1, pg.Pgid, state, err)
+		}
 		select {
 		case s := <-c.g.Csig:
 			fmt.Printf("\nCommand interrupted, signal %v\n", s)
