@@ -454,7 +454,6 @@ func (g *Goes) RunInForeground(pg *ProcessGroup) (ProcessState, error) {
 		uintptr(syscall.TIOCSPGRP),
 		uintptr(unsafe.Pointer(&pg.Pgid)))
 	_ = syscall.Kill(-pg.Pgid, syscall.SIGCONT)
-
 	state, err := WaitForPg(pg, false)
 	if g.TtyFd != 0 {
 		//s := <-g.Csig
