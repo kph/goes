@@ -33,11 +33,29 @@ import (
 	"github.com/platinasystems/url"
 )
 
+type ProcessState int
+
 const (
 	VerboseQuiet = iota
 	VerboseVerify
 	VerboseDebug
+
+	ProcessRunning ProcessState = iota
+	ProcessStopped
+	ProcessExited
 )
+
+func (s ProcessState) String() string {
+	switch s {
+	case ProcessRunning:
+		return "Running"
+	case ProcessStopped:
+		return "Stopped"
+	case ProcessExited:
+		return "Exited"
+	}
+	return "Unknown"
+}
 
 type Blocker interface {
 	Block(*Goes, shellutils.List) (*shellutils.List, func(io.Reader, io.Writer, io.Writer) error, error)
@@ -73,6 +91,7 @@ type Goes struct {
 
 	TtyFd int
 	Csig  chan os.Signal
+	Jobs  []*ProcessGroup
 }
 
 type Function struct {
@@ -379,91 +398,129 @@ func (g *Goes) MakePipefun(pipeline []func(io.Reader, io.Writer, io.Writer) erro
 			}
 			in = pin
 		}
+		state, err := g.RunInForeground(pg)
 		if err == nil {
-			_, _, _ = syscall.Syscall(syscall.SYS_IOCTL,
-				uintptr(g.TtyFd),
-				uintptr(syscall.TIOCSPGRP),
-				uintptr(unsafe.Pointer(&pg.Pgid)))
-			_ = syscall.Kill(-pg.Pgid, syscall.SIGCONT)
-
-			for {
-				var ws syscall.WaitStatus
-				wpid, err := syscall.Wait4(-pg.Pgid, &ws,
-					syscall.WUNTRACED, nil)
-				if err == syscall.ECHILD {
-					break
+			if state == ProcessStopped {
+				if g.Jobs == nil {
+					g.Jobs = make([]*ProcessGroup, 0)
 				}
-				if err != nil {
-					g.Status = err
-					break
-				}
-				var pe *ProcessEntry
-				for _, peX := range pg.Pe {
-					if wpid == peX.X.Process.Pid {
-						pe = peX
+				var j int
+				for j = 0; j < len(g.Jobs); j++ {
+					if g.Jobs[j] == nil {
 						break
 					}
 				}
-				if pe == nil {
-					err = fmt.Errorf("Wait4 returned unknown pid %d", wpid)
-					break
+				if j == len(g.Jobs) {
+					g.Jobs = append(g.Jobs, pg)
 				} else {
-					pe.Ws = ws
-					if ws.Stopped() {
-						break
-					}
-					if ws.Exited() {
-						if pe.X.Stdout != os.Stdout {
-							m, found := pe.X.Stdout.(io.Closer)
-							if found {
-								m.Close()
-							}
-						}
-						if pe.X.Stdin != os.Stdin {
-							m, found := pe.X.Stdin.(io.Closer)
-							if found {
-								m.Close()
-							}
-
-						}
-					}
+					g.Jobs[j] = pg
 				}
-				if err != nil {
-					g.Status = err
-					break
-				}
-				//done := true
-				//for _, pe := range pg.pe {
-				//	if pe.ws == 0 {
-				//		done = false
-				//		break
-				//	}
-				//}
-				//if done {
-				//	break
-				//}
-			}
-			if g.TtyFd != 0 {
-				//s := <-g.Csig
-				pgid, _ := syscall.Getpgid(0)
-				signal.Ignore(syscall.SIGTTOU)
-				_, _, _ = syscall.Syscall(syscall.SYS_IOCTL,
-					uintptr(g.TtyFd),
-					uintptr(syscall.TIOCSPGRP),
-					uintptr(unsafe.Pointer(&pgid)))
-				signal.Notify(g.Csig, syscall.SIGTTOU)
-				fmt.Printf("\nCommand returned err %s\n",
-					g.Status)
-			}
-			for _, pe := range pg.Pe {
-				fmt.Printf("PID %d status %v stopped %v exited %v\n",
-					pe.X.Process.Pid,
-					pe.Ws, pe.Ws.Stopped(), pe.Ws.Exited())
 			}
 		}
 		return err
 	}
 	return pipefun, nil
+}
+
+func (g *Goes) RunInForeground(pg *ProcessGroup) (ProcessState, error) {
+	_, _, _ = syscall.Syscall(syscall.SYS_IOCTL,
+		uintptr(g.TtyFd),
+		uintptr(syscall.TIOCSPGRP),
+		uintptr(unsafe.Pointer(&pg.Pgid)))
+	_ = syscall.Kill(-pg.Pgid, syscall.SIGCONT)
+
+	state, err := WaitForPg(pg, false)
+	if g.TtyFd != 0 {
+		//s := <-g.Csig
+		pgid, _ := syscall.Getpgid(0)
+		signal.Ignore(syscall.SIGTTOU)
+		_, _, _ = syscall.Syscall(syscall.SYS_IOCTL,
+			uintptr(g.TtyFd),
+			uintptr(syscall.TIOCSPGRP),
+			uintptr(unsafe.Pointer(&pgid)))
+		signal.Notify(g.Csig, syscall.SIGTTOU)
+		fmt.Printf("\nCommand returned err %s\n",
+			g.Status)
+	}
+	if err != nil {
+		return 0, err
+	}
+	for _, pe := range pg.Pe {
+		fmt.Printf("PID %d status %v stopped %v exited %v\n",
+			pe.X.Process.Pid,
+			pe.Ws, pe.Ws.Stopped(), pe.Ws.Exited())
+	}
+	return state, nil
+}
+
+func WaitForPg(pg *ProcessGroup, poll bool) (ProcessState, error) {
+	for {
+		var ws syscall.WaitStatus
+		opt := syscall.WUNTRACED
+		if poll {
+			opt |= syscall.WNOHANG
+		}
+		wpid, err := syscall.Wait4(-pg.Pgid, &ws, opt, nil)
+		if err == syscall.ECHILD || (wpid == 0 && poll) {
+			break
+		}
+		if err != nil {
+			return 0, err
+		}
+		var pe *ProcessEntry
+		for _, peX := range pg.Pe {
+			if wpid == peX.X.Process.Pid {
+				pe = peX
+				break
+			}
+		}
+		if pe == nil {
+			return 0, fmt.Errorf("Wait4 returned unknown pid %d", wpid)
+		} else {
+			pe.Ws = ws
+			if ws.Stopped() {
+				return ProcessStopped, nil
+			}
+			if ws.Exited() {
+				if pe.X.Stdout != os.Stdout {
+					m, found := pe.X.Stdout.(io.Closer)
+					if found {
+						m.Close()
+					}
+				}
+				if pe.X.Stdin != os.Stdin {
+					m, found := pe.X.Stdin.(io.Closer)
+					if found {
+						m.Close()
+					}
+
+				}
+			}
+		}
+		if err != nil {
+			return 0, err
+		}
+		//done := true
+		//for _, pe := range pg.pe {
+		//	if pe.ws == 0 {
+		//		done = false
+		//		break
+		//	}
+		//}
+		//if done {
+		//	break
+		//}
+	}
+
+	for _, pe := range pg.Pe {
+		if pe.Ws.Stopped() {
+			return ProcessStopped, nil
+		}
+		if !pe.Ws.Exited() {
+			return ProcessRunning, nil
+		}
+	}
+	return ProcessExited, nil
 }
 
 func Replace(s, name string) string {
