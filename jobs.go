@@ -37,9 +37,10 @@ func (g *Goes) bg(args ...string) (err error) {
 	if err != nil {
 		return err
 	}
-	for _, pe := range pg.Pe {
+	for i, pe := range pg.Pe {
 		if pe.Ws.Stopped() {
 			pe.Ws = 0 // Reset wait state
+			fmt.Printf("reset status job %d\n", i+1)
 		}
 	}
 	return nil
