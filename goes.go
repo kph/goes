@@ -420,7 +420,7 @@ func (g *Goes) MakePipefun(pipeline []func(io.Reader, io.Writer, io.Writer) erro
 			}
 			err = runfun(in, out, stderr)
 			if err != nil {
-				break
+				return err
 			}
 			in = pin
 		}
