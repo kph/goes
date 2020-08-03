@@ -167,16 +167,16 @@ func (*Command) unmakeStdioLinks() {
 }
 
 func (*Command) redirectStdioKmsg() {
-	for fd := 0; fd <= 2; fd++ {
-		err := syscall.Close(fd)
-		if err != nil {
-			log.Print("err", "console close", ":", err)
-		}
-		_, err = syscall.Open("/dev/kmsg", syscall.O_RDWR, 0)
-		if err != nil {
-			log.Print("err", "console reopen", ":", err)
-		}
-	}
+	//	for fd := 0; fd <= 2; fd++ {
+	//	err := syscall.Close(fd)
+	//	if err != nil {
+	//		log.Print("err", "console close", ":", err)
+	//	}
+	//	_, err = syscall.Open("/dev/kmsg", syscall.O_RDWR, 0)
+	//	if err != nil {
+	//		log.Print("err", "console reopen", ":", err)
+	//	}
+	//}
 }
 
 func (*Command) makeTargetDirs() {
