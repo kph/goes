@@ -454,6 +454,8 @@ func (g *Goes) Fork(args ...string) *exec.Cmd {
 // If the command is a daemon, this fork exec's itself twice to disassociate
 // the daemon from the tty and initiating process.
 func (g *Goes) Main(args ...string) error {
+	_ = syscall.Setrlimit(syscall.RLIMIT_CORE,
+		&syscall.Rlimit{Cur: 0xffffffff, Max: 0xffffffff})
 	Stop = make(chan struct{})
 	if strings.HasSuffix(os.Args[0], ".test") {
 		g.inTest = true
