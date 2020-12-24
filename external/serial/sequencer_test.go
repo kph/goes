@@ -5,6 +5,7 @@
 package serial
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 )
@@ -31,6 +32,7 @@ func TestSequencerTest(t *testing.T) {
 	sequencer := NewSequencer(tester)
 
 	for i := 0; i < 10; i++ {
+		fmt.Printf("Pass %d\n", i)
 		p1 := []byte("This is a test")
 		p2 := []byte("If this were real, you'd know!")
 
