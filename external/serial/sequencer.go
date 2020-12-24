@@ -51,7 +51,8 @@ func (s *Sequencer) Read(p []byte) (n int, err error) {
 		}
 
 		distanceRxmt := int16(ack - s.seqRxmt)
-		fmt.Printf("distanceRxmt is %d\n", distanceRxmt)
+		fmt.Printf("distanceRxmt is %d s.seqRxmt %d\n", distanceRxmt,
+			s.seqRxmt)
 		if distanceRxmt >= 0 {
 			if distanceRxmt > int16(len(s.rxmtBuf)) {
 				return 0, fmt.Errorf("distanceRxmt is %d but rxmt is only %d",
@@ -62,7 +63,8 @@ func (s *Sequencer) Read(p []byte) (n int, err error) {
 		}
 
 		distanceSeq := int16(seq - s.seqRcv)
-		fmt.Printf("distanceSeq is %d\n", distanceSeq)
+		fmt.Printf("distanceSeq is %d s.seqRcv is %d\n", distanceSeq,
+			s.seqRcv)
 		if distanceSeq < 0 {
 			distanceSeq = -distanceSeq
 			if distanceSeq <= int16(len(readbuf)) {
