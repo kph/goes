@@ -13,8 +13,7 @@ import (
 )
 
 type CRC struct {
-	c          io.ReadWriter
-	readBuffer []byte
+	c io.ReadWriter
 }
 
 func NewCRC(c io.ReadWriter) (s *CRC) {
