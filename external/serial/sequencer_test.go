@@ -7,7 +7,7 @@ package serial
 import (
 	"bufio"
 	"fmt"
-	"math/rand"
+	//	"math/rand"
 	"reflect"
 	"strings"
 	"testing"
@@ -24,7 +24,8 @@ func (t *SequencerTester) Read(p []byte) (n int, err error) {
 }
 
 func (t *SequencerTester) Write(p []byte) (n int, err error) {
-	r := rand.Intn(2)
+	//r := rand.Intn(2)
+	r := 0
 
 	switch r {
 	case 0:
