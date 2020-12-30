@@ -90,8 +90,8 @@ func (s *Sequencer) runTimer() {
 			o = o[nn:]
 		}
 
-		fmt.Printf("Sent retransmit of seq %d ack %d s.seqXmt %d s.seqRxmt %d len(s.rxmtBuf) %d\n",
-			seq, ack, s.seqXmt, s.seqRxmt, len(s.rxmtBuf))
+		fmt.Printf("Sent retransmit of seq %d ack %d s.seqXmt %d s.seqRxmt %d s.seqRcv %d len(s.rxmtBuf) %d\n",
+			seq, ack, s.seqXmt, s.seqRxmt, s.seqRcv, len(s.rxmtBuf))
 	}
 }
 
@@ -107,7 +107,7 @@ func (s *Sequencer) backgroundRead() {
 		nn, err := s.c.Read(readbuf)
 		fmt.Printf("s.c.Read(readbuf()) returned len %d err %s\n", nn,
 			err)
-		if err != nil || nn < 4 {
+		if err != nil || nn < 6 {
 			if err == nil {
 				err = fmt.Errorf("Bad read length %d", nn)
 			}
@@ -147,7 +147,7 @@ func (s *Sequencer) backgroundRead() {
 		s.xmitCond.L.Lock()
 		uDistanceRxmt := ack - s.seqRxmt
 		distanceRxmt := int16(uDistanceRxmt)
-		fmt.Printf("ack is %d seq is %d uDistanceRxmt is %d distanceRxmt is %d s.seqRxmt %d s.seqXmt %d\n",
+		fmt.Printf("backgroundRead: ack is %d seq is %d uDistanceRxmt is %d distanceRxmt is %d s.seqRxmt %d s.seqXmt %d\n",
 			ack, seq, uDistanceRxmt, distanceRxmt, s.seqRxmt, s.seqXmt)
 		if distanceRxmt >= 0 {
 			if distanceRxmt > int16(len(s.rxmtBuf)) {
@@ -166,8 +166,8 @@ func (s *Sequencer) backgroundRead() {
 		s.recvCond.L.Lock()
 		seq += uint16(len(dataBuf))
 		distanceSeq := int16(seq - s.seqRcv)
-		fmt.Printf("distanceSeq is %d s.seqRcv is %d len(dataBuf) is %d\n",
-			distanceSeq, s.seqRcv, len(dataBuf))
+		fmt.Printf("distanceSeq is %d seq is %d s.seqRcv is %d len(dataBuf) is %d\n",
+			distanceSeq, seq, s.seqRcv, len(dataBuf))
 		if distanceSeq >= 0 {
 			if distanceSeq <= int16(len(dataBuf)) {
 				fmt.Printf("Databuf before shrink: %s\n",
@@ -176,6 +176,8 @@ func (s *Sequencer) backgroundRead() {
 				fmt.Printf("Databuf after shrink: %s\n",
 					dataBuf)
 			}
+			fmt.Printf("backgroundRead: s.recvBuf %s databuf %s\n",
+				s.recvBuf, dataBuf)
 			s.lastRcv = time.Now()
 			s.recvBuf = append(s.recvBuf, dataBuf...)
 			s.seqRcv += uint16(distanceSeq)
