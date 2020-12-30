@@ -9,106 +9,257 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"sync"
+	"time"
 )
 
 type Sequencer struct {
-	c       io.ReadWriter
-	seqXmt  uint16 // Sequence number to transmit
-	seqRxmt uint16 // Sequence number retransmit buffer represents
-	seqRcv  uint16 // Sequence number we've received
-	rxmtBuf []byte // Retransmit buffer
+	c        io.ReadWriter
+	closed   chan struct{} // Channel closed notifier
+	xmitCond *sync.Cond
+	recvCond *sync.Cond
+	seqXmt   uint16    // Sequence number to transmit
+	seqRxmt  uint16    // Sequence number retransmit buffer represents
+	seqRcv   uint16    // Sequence number we've received
+	lastRcv  time.Time // Time last packet was received
+	rxmtBuf  []byte    // Retransmit buffer
+	recvBuf  []byte    // Receive buffer
 }
 
 func NewSequencer(c io.ReadWriter) (s *Sequencer) {
-	s = &Sequencer{c: c}
+	s = &Sequencer{
+		c:        c,
+		closed:   make(chan struct{}),
+		xmitCond: sync.NewCond(&sync.Mutex{}),
+		recvCond: sync.NewCond(&sync.Mutex{}),
+	}
+	go s.runTimer()
 
 	return s
 }
 
-func (s *Sequencer) Read(p []byte) (n int, err error) {
+func (s *Sequencer) runTimer() {
+	go s.backgroundRead()
 	for {
-		readbuf := make([]byte, 1024, 1024)
+		time.Sleep(time.Second)
+
+		select {
+		case <-s.closed:
+			return
+		default:
+		}
+
+		if len(s.rxmtBuf) == 0 {
+			continue
+		}
+		s.recvCond.L.Lock()
+		ack := s.seqRcv
+		s.recvCond.L.Unlock()
+
+		s.xmitCond.L.Lock()
+		fmt.Printf("Sequencer.runTimer: len(s.rxmtBuf)=%d seqXmt=%d seqRxmt=%d seqRcv=%d\n",
+			len(s.rxmtBuf), s.seqXmt, s.seqRxmt, ack)
+
+		seq := s.seqRxmt
+
+		buf := new(bytes.Buffer)
+		err := binary.Write(buf, binary.LittleEndian, seq)
+		if err != nil {
+			return
+		}
+
+		err = binary.Write(buf, binary.LittleEndian, ack)
+		if err != nil {
+			return
+		}
+
+		err = binary.Write(buf, binary.LittleEndian, int16(len(s.rxmtBuf)))
+		if err != nil {
+			return
+		}
+
+		o := append(buf.Bytes(), s.rxmtBuf...)
+
+		s.xmitCond.L.Unlock()
+
+		for len(o) != 0 {
+			nn, err := s.c.Write(o)
+			if err != nil {
+				return
+			}
+			o = o[nn:]
+		}
+
+		fmt.Printf("Sent retransmit of seq %d ack %d s.seqXmt %d s.seqRxmt %d len(s.rxmtBuf) %d\n",
+			seq, ack, s.seqXmt, s.seqRxmt, len(s.rxmtBuf))
+	}
+}
+
+func (s *Sequencer) backgroundRead() {
+	readbuf := make([]byte, 1024, 1024)
+
+	for {
+		select {
+		case <-s.closed:
+			return
+		default:
+		}
 		nn, err := s.c.Read(readbuf)
+		fmt.Printf("s.c.Read(readbuf()) returned len %d err %s\n", nn,
+			err)
 		if err != nil || nn < 4 {
 			if err == nil {
 				err = fmt.Errorf("Bad read length %d", nn)
 			}
-			return 0, err
+			fmt.Printf("Exiting backgroundRead: error reading readbuf: %s\n",
+				err)
+			return
 		}
-		hdrBytes := readbuf[:4]
-		readbuf = readbuf[4:nn]
+		hdrBytes := readbuf[:6]
+		dataBuf := readbuf[6:nn]
 
 		var seq uint16
 		var ack uint16
+		var msgLen uint16
+
 		buf := bytes.NewReader(hdrBytes)
 		err = binary.Read(buf, binary.LittleEndian, &seq)
 		if err != nil {
-			return 0, err
+			fmt.Printf("Exiting backgroundRead: error reading seq: %s\n",
+				err)
+			return
 		}
 		err = binary.Read(buf, binary.LittleEndian, &ack)
 		if err != nil {
-			return 0, err
+			fmt.Printf("Exiting backgroundRead: error reading ack: %s\n",
+				err)
+			return
 		}
+		err = binary.Read(buf, binary.LittleEndian, &msgLen)
+		if err != nil {
+			fmt.Printf("Exiting backgroundRead: error reading msgLen: %s\n",
+				err)
+			return
+		}
+		fmt.Printf("backgroundRead: seq %d ack %d len %d (seqRxmt %d)\n",
+			seq, ack, msgLen, s.seqRxmt)
 
-		distanceRxmt := int16(ack - s.seqRxmt)
-		fmt.Printf("distanceRxmt is %d s.seqRxmt %d\n", distanceRxmt,
-			s.seqRxmt)
+		s.xmitCond.L.Lock()
+		uDistanceRxmt := ack - s.seqRxmt
+		distanceRxmt := int16(uDistanceRxmt)
+		fmt.Printf("ack is %d seq is %d uDistanceRxmt is %d distanceRxmt is %d s.seqRxmt %d s.seqXmt %d\n",
+			ack, seq, uDistanceRxmt, distanceRxmt, s.seqRxmt, s.seqXmt)
 		if distanceRxmt >= 0 {
 			if distanceRxmt > int16(len(s.rxmtBuf)) {
-				return 0, fmt.Errorf("distanceRxmt is %d but rxmt is only %d",
-					distanceRxmt, len(s.rxmtBuf))
+				fmt.Printf("Exiting BackgroundRead: distanceRxmt (%d) > len(s.rxmtBuf) (%d)\n",
+					distanceRxmt,
+					int16(len(s.rxmtBuf)))
+				return
 			}
 			s.rxmtBuf = s.rxmtBuf[distanceRxmt:]
 			s.seqRxmt += uint16(distanceRxmt)
+			fmt.Printf("Updated received sequence by %d: len(s.rxmtBuf) = %d s.seqRxmt = %d\n",
+				distanceRxmt, len(s.rxmtBuf), s.seqRxmt)
+		}
+		s.xmitCond.L.Unlock()
+
+		s.recvCond.L.Lock()
+		seq += uint16(len(dataBuf))
+		distanceSeq := int16(seq - s.seqRcv)
+		fmt.Printf("distanceSeq is %d s.seqRcv is %d len(dataBuf) is %d\n",
+			distanceSeq, s.seqRcv, len(dataBuf))
+		if distanceSeq >= 0 {
+			if distanceSeq <= int16(len(dataBuf)) {
+				fmt.Printf("Databuf before shrink: %s\n",
+					dataBuf)
+				dataBuf = dataBuf[distanceSeq:]
+				fmt.Printf("Databuf after shrink: %s\n",
+					dataBuf)
+			}
+			s.lastRcv = time.Now()
+			s.recvBuf = append(s.recvBuf, dataBuf...)
+			s.seqRcv += uint16(distanceSeq)
+			s.recvCond.Broadcast()
 		}
 
-		distanceSeq := int16(seq - s.seqRcv)
-		fmt.Printf("distanceSeq is %d s.seqRcv is %d\n", distanceSeq,
-			s.seqRcv)
-		if distanceSeq < 0 {
-			distanceSeq = -distanceSeq
-			if distanceSeq <= int16(len(readbuf)) {
-				readbuf = readbuf[distanceSeq:]
+		s.recvCond.L.Unlock()
+	}
+}
+
+func (s *Sequencer) Read(p []byte) (n int, err error) {
+	for {
+		s.recvCond.L.Lock()
+		for {
+			n = len(s.recvBuf)
+			fmt.Printf("Sequencer.Read: len(p)=%d len(s.recvBuf) %d\n",
+				len(p), n)
+			if n != 0 {
+				break
 			}
-			distanceSeq = 0
+			//			if n == 0 {
+			//	s.recvCond.L.Unlock()
+			//	return 0, io.EOF
+			//}
+			s.recvCond.Wait()
 		}
-		if distanceSeq > 0 {
-			continue // We could cache out of order
+		if n > len(p) {
+			n = len(p)
 		}
-		readbuf = readbuf[distanceSeq:]
-		n = len(readbuf)
-		if n != 0 {
-			s.seqRcv += uint16(n)
-			copy(p, readbuf)
-			return n, nil
-		}
+		fmt.Printf("Sequencer.Read: len(s.recvBuf) %d s.recvBuf %s\n",
+			len(s.recvBuf), s.recvBuf)
+		copy(p, s.recvBuf)
+		s.recvBuf = s.recvBuf[n:]
+		s.recvCond.L.Unlock()
+		fmt.Printf("Returning Sequencer.Read: len(s.recvBuf) %d\n",
+			len(s.recvBuf))
+		return n, nil
 	}
 }
 
 func (s *Sequencer) Write(p []byte) (n int, err error) {
+	s.recvCond.L.Lock()
+	ack := s.seqRcv
+	s.recvCond.L.Unlock()
+
+	s.xmitCond.L.Lock()
+	fmt.Printf("Sequencer.Write: len(s.rxmtBuf)=%d len(p)=%d seqXmt=%d seqRxmt=%d seqRcv=%d\n",
+		len(s.rxmtBuf), len(p), s.seqXmt, s.seqRxmt, ack)
+	seq := s.seqXmt
+	s.seqXmt += uint16(len(p))
 	s.rxmtBuf = append(s.rxmtBuf, p...)
+
+	if len(s.rxmtBuf) != len(p) {
+		s.xmitCond.L.Unlock()
+		return len(p), nil
+	}
+
 	buf := new(bytes.Buffer)
-	err = binary.Write(buf, binary.LittleEndian, s.seqXmt)
+	err = binary.Write(buf, binary.LittleEndian, seq)
 	if err != nil {
 		return 0, fmt.Errorf("Error in binary.Write: %w", err)
 	}
 
-	err = binary.Write(buf, binary.LittleEndian, s.seqRcv)
+	err = binary.Write(buf, binary.LittleEndian, ack)
+	if err != nil {
+		return 0, fmt.Errorf("Error in binary.Write: %w", err)
+	}
+
+	err = binary.Write(buf, binary.LittleEndian, int16(len(p)))
 	if err != nil {
 		return 0, fmt.Errorf("Error in binary.Write: %w", err)
 	}
 
 	o := append(buf.Bytes(), p...)
 
+	s.xmitCond.L.Unlock()
+
 	for len(o) != 0 {
 		nn, err := s.c.Write(o)
 		if err != nil {
 			return 0, err
 		}
-		n = n + nn
 		o = o[nn:]
 	}
 
-	s.seqXmt += uint16(len(p))
-	return
+	return len(p), nil
 }
