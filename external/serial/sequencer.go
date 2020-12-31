@@ -179,7 +179,6 @@ func (s *Sequencer) backgroundRead() {
 				s.recvBuf, dataBuf)
 			s.lastRcv = time.Now()
 			s.recvBuf = append(s.recvBuf, dataBuf...)
-			//s.seqRcv += uint16(distanceSeq)
 			s.seqRcv += uint16(len(dataBuf))
 			s.recvCond.Broadcast()
 		}
