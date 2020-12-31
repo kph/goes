@@ -13,17 +13,28 @@ import (
 	"time"
 )
 
+type HeaderFlags uint16
+
+const (
+	HFInit1   HeaderFlags = 1 << iota // Initialization Phase 1
+	HFInit2                           // Initialization Phase 2
+	HFRunning                         // Running connection
+	HFClose1                          // Close phase 1
+	HFClose2                          // Close phase 2
+)
+
 type Sequencer struct {
 	c        io.ReadWriter
 	closed   chan struct{} // Channel closed notifier
 	xmitCond *sync.Cond
 	recvCond *sync.Cond
-	seqXmt   uint16    // Sequence number to transmit
-	seqRxmt  uint16    // Sequence number retransmit buffer represents
-	seqRcv   uint16    // Sequence number we've received
-	lastRcv  time.Time // Time last packet was received
-	rxmtBuf  []byte    // Retransmit buffer
-	recvBuf  []byte    // Receive buffer
+	flags    HeaderFlags // Current header flags (state)
+	seqXmt   uint16      // Sequence number to transmit
+	seqRxmt  uint16      // Sequence number retransmit buffer represents
+	seqRcv   uint16      // Sequence number we've received
+	lastRcv  time.Time   // Time last packet was received
+	rxmtBuf  []byte      // Retransmit buffer
+	recvBuf  []byte      // Receive buffer
 }
 
 func NewSequencer(c io.ReadWriter) (s *Sequencer) {
@@ -32,6 +43,7 @@ func NewSequencer(c io.ReadWriter) (s *Sequencer) {
 		closed:   make(chan struct{}),
 		xmitCond: sync.NewCond(&sync.Mutex{}),
 		recvCond: sync.NewCond(&sync.Mutex{}),
+		flags:    HFInit1,
 	}
 	go s.runTimer()
 
@@ -63,7 +75,13 @@ func (s *Sequencer) runTimer() {
 		seq := s.seqRxmt
 
 		buf := new(bytes.Buffer)
-		err := binary.Write(buf, binary.LittleEndian, seq)
+
+		err := binary.Write(buf, binary.LittleEndian, s.flags)
+		if err != nil {
+			return
+		}
+
+		err = binary.Write(buf, binary.LittleEndian, seq)
 		if err != nil {
 			return
 		}
@@ -107,7 +125,7 @@ func (s *Sequencer) backgroundRead() {
 		nn, err := s.c.Read(readbuf)
 		fmt.Printf("s.c.Read(readbuf()) returned len %d err %s\n", nn,
 			err)
-		if err != nil || nn < 6 {
+		if err != nil || nn < 8 {
 			if err == nil {
 				err = fmt.Errorf("Bad read length %d", nn)
 			}
@@ -115,14 +133,21 @@ func (s *Sequencer) backgroundRead() {
 				err)
 			return
 		}
-		hdrBytes := readbuf[:6]
-		dataBuf := readbuf[6:nn]
+		hdrBytes := readbuf[:8]
+		dataBuf := readbuf[8:nn]
 
+		var flags uint16
 		var seq uint16
 		var ack uint16
 		var msgLen uint16
 
 		buf := bytes.NewReader(hdrBytes)
+		err = binary.Read(buf, binary.LittleEndian, &flags)
+		if err != nil {
+			fmt.Printf("Exiting backgroundRead: error reading flags: %s\n",
+				err)
+			return
+		}
 		err = binary.Read(buf, binary.LittleEndian, &seq)
 		if err != nil {
 			fmt.Printf("Exiting backgroundRead: error reading seq: %s\n",
@@ -235,6 +260,10 @@ func (s *Sequencer) Write(p []byte) (n int, err error) {
 	}
 
 	buf := new(bytes.Buffer)
+	err = binary.Write(buf, binary.LittleEndian, s.flags)
+	if err != nil {
+		return
+	}
 	err = binary.Write(buf, binary.LittleEndian, seq)
 	if err != nil {
 		return 0, fmt.Errorf("Error in binary.Write: %w", err)
