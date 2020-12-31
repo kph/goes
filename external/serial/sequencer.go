@@ -49,9 +49,9 @@ func (s *Sequencer) runTimer() {
 		default:
 		}
 
-		if len(s.rxmtBuf) == 0 {
-			continue
-		}
+		//if len(s.rxmtBuf) == 0 {
+		//	continue
+		//}
 		s.recvCond.L.Lock()
 		ack := s.seqRcv
 		s.recvCond.L.Unlock()
@@ -141,8 +141,8 @@ func (s *Sequencer) backgroundRead() {
 				err)
 			return
 		}
-		fmt.Printf("backgroundRead: seq %d ack %d len %d (seqRxmt %d)\n",
-			seq, ack, msgLen, s.seqRxmt)
+		fmt.Printf("backgroundRead: seq %d ack %d len %d seqRxmt %d seqRcv %d\n",
+			seq, ack, msgLen, s.seqRxmt, s.seqRcv)
 
 		s.xmitCond.L.Lock()
 		uDistanceRxmt := ack - s.seqRxmt
@@ -164,7 +164,6 @@ func (s *Sequencer) backgroundRead() {
 		s.xmitCond.L.Unlock()
 
 		s.recvCond.L.Lock()
-		seq += uint16(len(dataBuf))
 		distanceSeq := int16(seq - s.seqRcv)
 		fmt.Printf("distanceSeq is %d seq is %d s.seqRcv is %d len(dataBuf) is %d\n",
 			distanceSeq, seq, s.seqRcv, len(dataBuf))
@@ -180,7 +179,8 @@ func (s *Sequencer) backgroundRead() {
 				s.recvBuf, dataBuf)
 			s.lastRcv = time.Now()
 			s.recvBuf = append(s.recvBuf, dataBuf...)
-			s.seqRcv += uint16(distanceSeq)
+			//s.seqRcv += uint16(distanceSeq)
+			s.seqRcv += uint16(len(dataBuf))
 			s.recvCond.Broadcast()
 		}
 
