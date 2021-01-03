@@ -64,8 +64,7 @@ func (s *CRC) Write(p []byte) (n int, err error) {
 		if err != nil {
 			return 0, err
 		}
-		n = n + nn
 		o = o[nn:]
 	}
-	return
+	return len(p), nil
 }
