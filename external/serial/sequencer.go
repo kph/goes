@@ -212,6 +212,11 @@ func (s *Sequencer) backgroundRead() {
 	}
 }
 
+func (s *Sequencer) Close() (err error) {
+	fmt.Printf("Write close() method\n")
+	return nil
+}
+
 func (s *Sequencer) Read(p []byte) (n int, err error) {
 	for {
 		s.recvCond.L.Lock()
