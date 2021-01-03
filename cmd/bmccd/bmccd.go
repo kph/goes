@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/platinasystems/goes/external/serial"
 	"github.com/platinasystems/goes/lang"
 )
 
@@ -49,11 +50,12 @@ func (Command) Main(args ...string) (err error) {
 		time.Sleep(time.Second)
 	}
 	defer dev.Close()
+	transport := serial.NewSequencer(serial.NewCRC(serial.NewFramer(dev)))
 	srv := rpc.NewServer()
 	srv.Register(new(Swapper))
 
 	go func() {
-		srv.ServeConn(dev)
+		srv.ServeConn(transport)
 		fmt.Println("ServeConn exited")
 	}()
 
