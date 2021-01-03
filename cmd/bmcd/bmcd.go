@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/platinasystems/goes/external/serial"
 	"github.com/platinasystems/goes/lang"
 )
 
@@ -50,7 +51,9 @@ func (Command) Main(args ...string) (err error) {
 	}
 	defer dev.Close()
 
-	client := rpc.NewClient(dev)
+	transport := serial.NewSequencer(serial.NewCRC(serial.NewFramer(dev)))
+
+	client := rpc.NewClient(transport)
 
 	reply := ""
 	for {
