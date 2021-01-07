@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/rpc"
 	"os"
+	"os/signal"
 	"time"
 
 	"github.com/platinasystems/goes/external/serial"
@@ -40,6 +41,7 @@ DESCRIPTION
 func (Command) Main(args ...string) (err error) {
 	var dev *os.File
 
+	signal.Reset(os.Interrupt)
 	for {
 		dev, err = os.OpenFile("/dev/i2c-slave-stream-0",
 			os.O_RDWR, 0)
