@@ -129,9 +129,9 @@ func (s *Sequencer) backgroundRead() {
 			if err == nil {
 				err = fmt.Errorf("Bad read length %d", nn)
 			}
-			s.debugf("Exiting backgroundRead: error reading readbuf: %s\n",
+			fmt.Printf("Error reading from connection: %s\n",
 				err)
-			return
+			continue
 		}
 		hdrBytes := readbuf[:8]
 		dataBuf := readbuf[8:nn]
