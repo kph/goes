@@ -14,7 +14,7 @@ import (
 
 type Mux struct {
 	c        io.ReadWriter
-	databuf  []byte
+	recvBuf  []byte
 	recvCond *sync.Cond
 	listener func(stream int) error
 }
@@ -77,7 +77,7 @@ func (m *Mux) backgroundRead() (err error) {
 
 		}
 		m.recvCond.L.Lock()
-		m.databuf = append(m.databuf, databuf...)
+		m.recvBuf = append(m.recvBuf, databuf...)
 		m.recvCond.L.Unlock()
 		m.recvCond.Broadcast()
 	}
@@ -86,7 +86,7 @@ func (m *Mux) backgroundRead() (err error) {
 func (m *Mux) Read(p []byte) (n int, err error) {
 	m.recvCond.L.Lock()
 	for {
-		n = len(m.databuf)
+		n = len(m.recvBuf)
 		if n != 0 {
 			break
 		}
@@ -95,8 +95,8 @@ func (m *Mux) Read(p []byte) (n int, err error) {
 	if n > len(p) {
 		n = len(p)
 	}
-	copy(p, m.databuf)
-	m.databuf = m.databuf[n:]
+	copy(p, m.recvBuf)
+	m.recvBuf = m.recvBuf[n:]
 	m.recvCond.L.Unlock()
 	return
 }
