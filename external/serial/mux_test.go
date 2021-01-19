@@ -20,23 +20,26 @@ type MuxTester struct {
 func (t *MuxTester) Read(p []byte) (n int, err error) {
 	cnt := len(t.curbuf)
 	if cnt == 0 {
-		fmt.Printf("In mux_test:Read\n")
+		fmt.Printf("In mux_test:Read len(t.msg)=%d\n", len(t.msg))
 		t.curbuf = <-t.msg
-		fmt.Printf("Out mux_test:Read\n")
 		cnt = len(t.curbuf)
+		fmt.Printf("Out mux_test:Read cnt=%d\n", cnt)
 	}
 	if cnt > len(p) {
 		cnt = len(p)
 	}
+	fmt.Printf("len(p)=%d cnt=%d len(t.curbuf)=%d\n",
+		len(p), cnt, len(t.curbuf))
 	copy(p, t.curbuf[:cnt])
 	t.curbuf = t.curbuf[cnt:]
 	return cnt, nil
 }
 
 func (t *MuxTester) Write(p []byte) (n int, err error) {
-	fmt.Printf("In mux_test:Write\n")
+	fmt.Printf("In mux_test:Write len(p)=%d len(t.msg)=%d\n", len(p),
+		len(t.msg))
 	t.msg <- p
-	fmt.Printf("Out mux_test:Write\n")
+	fmt.Printf("Out mux_test:Write len(t.msg)=%d\n", len(t.msg))
 
 	return len(p), nil
 }
@@ -44,12 +47,14 @@ func (t *MuxTester) Write(p []byte) (n int, err error) {
 func TestMuxTest(t *testing.T) {
 	tester := &MuxTester{msg: make(chan []byte, 10)}
 	mux := NewMux(tester, nil)
+	stream := mux.NewStream(0)
+	scanner := bufio.NewScanner(stream)
 
 	for i := 0; i < 10; i++ {
 		p1 := fmt.Sprintf("Pass %d this is a test\n", i)
 		p2 := fmt.Sprintf("Pass %d If this were real, you'd know!\n", i)
 
-		n, err := mux.Write([]byte(p1))
+		n, err := stream.Write([]byte(p1))
 		if err != nil {
 			t.Error(err)
 			return
@@ -59,7 +64,7 @@ func TestMuxTest(t *testing.T) {
 			return
 		}
 
-		n, err = mux.Write([]byte(p2))
+		n, err = stream.Write([]byte(p2))
 		if err != nil {
 			t.Error(err)
 			return
@@ -69,8 +74,7 @@ func TestMuxTest(t *testing.T) {
 			return
 		}
 
-		scanner := bufio.NewScanner(mux)
-
+		fmt.Printf("Reading %d t1\n", i)
 		if !scanner.Scan() {
 			t.Error("Scanner returned premature end")
 		}
@@ -83,6 +87,7 @@ func TestMuxTest(t *testing.T) {
 			fmt.Printf("Pass %d pattern 1 passes\n", i)
 		}
 
+		fmt.Printf("Reading %d t2\n", i)
 		if !scanner.Scan() {
 			t.Error("Scanner returned premature end")
 		}

@@ -14,25 +14,42 @@ import (
 
 type Mux struct {
 	c        io.ReadWriter
-	recvBuf  []byte
-	recvCond *sync.Cond
+	streams  [256]Stream
 	listener func(stream int) error
 }
 
 type Stream struct {
+	mux      *Mux
+	id       uint8
+	recvBuf  []byte
+	recvCond *sync.Cond
 }
 
 func NewMux(c io.ReadWriter, listener func(stream int) (err error)) (m *Mux) {
 	m = &Mux{
 		c:        c,
 		listener: listener,
-		recvCond: sync.NewCond(&sync.Mutex{}),
 	}
 	go m.backgroundRead()
 	return m
 }
 
-func (m *Mux) backgroundRead() (err error) {
+func (m *Mux) NewStream(id uint8) (s *Stream) {
+	s = &m.streams[id]
+	s.mux = m
+	s.recvCond = sync.NewCond(&sync.Mutex{})
+	s.id = id
+	return
+}
+
+func (m *Mux) backgroundRead() {
+	err := m.doBackgroundRead()
+	if err != nil {
+		panic(err)
+	}
+}
+
+func (m *Mux) doBackgroundRead() (err error) {
 	var pktlen uint16
 	var ctrl byte
 	var stream byte
@@ -76,32 +93,33 @@ func (m *Mux) backgroundRead() (err error) {
 			datalen += uint16(nn)
 
 		}
-		m.recvCond.L.Lock()
-		m.recvBuf = append(m.recvBuf, databuf...)
-		m.recvCond.L.Unlock()
-		m.recvCond.Broadcast()
+		s := m.streams[stream]
+		s.recvCond.L.Lock()
+		s.recvBuf = append(s.recvBuf, databuf...)
+		s.recvCond.L.Unlock()
+		s.recvCond.Broadcast()
 	}
 }
 
-func (m *Mux) Read(p []byte) (n int, err error) {
-	m.recvCond.L.Lock()
+func (s *Stream) Read(p []byte) (n int, err error) {
+	s.recvCond.L.Lock()
 	for {
-		n = len(m.recvBuf)
+		n = len(s.recvBuf)
 		if n != 0 {
 			break
 		}
-		m.recvCond.Wait()
+		s.recvCond.Wait()
 	}
 	if n > len(p) {
 		n = len(p)
 	}
-	copy(p, m.recvBuf)
-	m.recvBuf = m.recvBuf[n:]
-	m.recvCond.L.Unlock()
+	copy(p, s.recvBuf)
+	s.recvBuf = s.recvBuf[n:]
+	s.recvCond.L.Unlock()
 	return
 }
 
-func (m *Mux) Write(p []byte) (n int, err error) {
+func (s *Stream) Write(p []byte) (n int, err error) {
 	pktlen := uint16(len(p))
 	ctrl := byte(0)
 	stream := byte(0)
@@ -123,7 +141,7 @@ func (m *Mux) Write(p []byte) (n int, err error) {
 	o := append(buf.Bytes(), p...)
 
 	for len(o) != 0 {
-		nn, err := m.c.Write(o)
+		nn, err := s.mux.c.Write(o)
 		if err != nil {
 			return 0, err
 		}

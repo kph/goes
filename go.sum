@@ -36,6 +36,7 @@ github.com/platinasystems/ioport v0.0.1 h1:YIrQV/oix3ENpzxi3Atw0UxW2JV21OhPR2VbJ
 github.com/platinasystems/ioport v0.0.1/go.mod h1:hfzDUTcaOvxYi0bwMY50WVOenxuO9GQu1k55K9nkXTg=
 github.com/platinasystems/ldp v0.0.2 h1:pSqelqQiHOpIcNpgpNYRgV4BhVCUqTrrQSLHk7Lbhlw=
 github.com/platinasystems/ldp v0.0.2/go.mod h1:5FioI0SgC7RQZOtJRvnXqrInH0D4U2Pn/6M2rT+5Tj0=
+github.com/platinasystems/ldp v0.0.3/go.mod h1:Olxlov3uU+vWLKNhvkO97FVexakXN5D4KA/oKtXsZpk=
 github.com/platinasystems/liner v0.0.0-20170801164932-8dd8fbd0e16d h1:jVkqqhZKx8eAb94QYDajS9KOh5B/rOAx34H7DDZGrEo=
 github.com/platinasystems/liner v0.0.0-20170801164932-8dd8fbd0e16d/go.mod h1:5N7zNCEtHP1s5kK6pVgaFwtzEleCreRubeHBnE4rGso=
 github.com/platinasystems/loopback v0.0.2 h1:iv7rWbJUx5YrB93/kPrMcbJ3qWZ+XZAszLD4yb73eSM=
