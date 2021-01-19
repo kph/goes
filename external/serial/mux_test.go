@@ -5,8 +5,10 @@
 package serial
 
 import (
+	"bufio"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -41,7 +43,7 @@ func (t *MuxTester) Write(p []byte) (n int, err error) {
 
 func TestMuxTest(t *testing.T) {
 	tester := &MuxTester{msg: make(chan []byte, 10)}
-	mux := NewMux(tester)
+	mux := NewMux(tester, nil)
 
 	for i := 0; i < 10; i++ {
 		p1 := fmt.Sprintf("Pass %d this is a test\n", i)
@@ -67,28 +69,27 @@ func TestMuxTest(t *testing.T) {
 			return
 		}
 
-		buf := make([]byte, 1024)
-		n, err = mux.Read(buf)
-		if err != nil {
-			fmt.Printf("Got error %s from mux.Read pattern 1\n", err)
-			t.Error("Data 1 error\n")
+		scanner := bufio.NewScanner(mux)
+
+		if !scanner.Scan() {
+			t.Error("Scanner returned premature end")
 		}
-		if !reflect.DeepEqual(string(buf[:n]), p1) {
+		t1 := scanner.Text()
+		if !reflect.DeepEqual(t1, strings.TrimSuffix(p1, "\n")) {
 			fmt.Printf("Pass %d data pattern 1 incorrect: got %v expected %v\n",
-				i, []byte(buf[:n]), []byte(p1))
+				i, t1, p1)
 			t.Error("Data 1 incorrect\n")
 		} else {
 			fmt.Printf("Pass %d pattern 1 passes\n", i)
 		}
 
-		n, err = mux.Read(buf)
-		if err != nil {
-			fmt.Printf("Got error %s from mux.Read pattern 2\n", err)
-			t.Error("Data 2 error\n")
+		if !scanner.Scan() {
+			t.Error("Scanner returned premature end")
 		}
-		if !reflect.DeepEqual(string(buf[:n]), p2) {
+		t2 := scanner.Text()
+		if !reflect.DeepEqual(t2, strings.TrimSuffix(p2, "\n")) {
 			fmt.Printf("Pass %d data pattern 2 incorrect: got %v expected %v\n",
-				i, []byte(buf[:n]), []byte(p2))
+				i, t2, p2)
 			t.Error("Data 2 incorrect\n")
 		} else {
 			fmt.Printf("Pass %d pattern 2 passes\n", i)
