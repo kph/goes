@@ -43,6 +43,8 @@ type Command struct {
 	DefaultHostname string
 	DefaultRelease  string
 
+	DNSAddr string
+
 	GPGServer string
 
 	Hostname string
@@ -116,6 +118,8 @@ OPTIONS
 
 	-debug			Enable debugging. Passed to debootstrap
 
+	-dnsaddr		Set default DNS addresses.
+
 	-gpg-server srv		GPG server to validate keys. Default is
 				pool.sks-keyservers.net
 
@@ -163,6 +167,8 @@ func (c *Command) Main(args ...string) error {
 			"http://ftp.debian.org/debian"},
 
 		{"-debootstrap-program", &c.DebootstrapProgram, "debootstrap"},
+
+		{"-dnsaddr", &c.DNSAddr, ""},
 
 		{"-gpg-server", &c.GPGServer, "pool.sks-keyservers.net"},
 
