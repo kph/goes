@@ -5,12 +5,10 @@
 package install
 
 import (
-	"bufio"
 	"fmt"
 	"net"
 	"os"
 	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
@@ -154,31 +152,6 @@ OPTIONS
 
 	-shell			Do not install. Just run a shell`,
 	}
-}
-
-func (c *Command) updateDNS() {
-	file, err := os.Open("/etc/resolv.conf")
-	if err != nil {
-		fmt.Printf("Unable to parse /etc/resolv.conf: %s\n", err)
-		return
-	}
-	defer file.Close()
-
-	ns := ""
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		l := scanner.Text()
-		f := strings.Fields(l)
-		if len(f) != 2 || f[0] != "nameserver" {
-			continue
-		}
-		if ns != "" {
-			ns = ns + " "
-		}
-		ns = ns + f[1]
-	}
-	c.DefaultDNS = ns
 }
 
 func (c *Command) Main(args ...string) error {
