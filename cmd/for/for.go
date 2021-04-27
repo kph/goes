@@ -39,7 +39,7 @@ DESCRIPTION
 func (c Command) Block(g *goes.Goes, ls shellutils.List) (*shellutils.List, func(stdin io.Reader, stdout io.Writer, stderr io.Writer) error, error) {
 	var doList []func(stdin io.Reader, stdout io.Writer, stderr io.Writer) error
 	cl := ls.Cmds[0]
-	fmt.Printf("On entry: ls: %#v\n", ls)
+
 	// for <var> in <commands>
 	if len(cl.Cmds) > 1 {
 		cl.Cmds = cl.Cmds[1:]
