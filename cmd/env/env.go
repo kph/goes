@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/platinasystems/goes"
-	"github.com/platinasystems/goes/cmd"
 	"github.com/platinasystems/goes/lang"
 )
 
@@ -43,8 +42,6 @@ DESCRIPTION
 }
 
 func (c *Command) Goes(g *goes.Goes) { c.g = g }
-
-func (*Command) Kind() cmd.Kind { return cmd.DontFork | cmd.CantPipe }
 
 func (c *Command) Main(args ...string) error {
 	switch len(args) {
