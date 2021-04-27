@@ -18,6 +18,7 @@ const (
 	TokenLiteral = iota
 	TokenEnvget
 	TokenEnvset
+	TokenGlob
 )
 
 // Token is a type and a string value. During parsing, we convert

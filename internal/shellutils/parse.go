@@ -5,6 +5,7 @@ package shellutils
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"unicode"
@@ -209,6 +210,21 @@ processRune:
 			if err != nil {
 				return nil, err
 			}
+			continue
+		}
+		if r == '*' || r == '?' || r == '[' {
+			glob := string(r)
+			for len(s) > 0 {
+				r, wid := utf8.DecodeRuneInString(s)
+				if unicode.IsSpace(r) ||
+					strings.ContainsRune("|&;()<>", r) {
+					break
+				}
+				s = s[wid:]
+				glob = glob + string(r)
+			}
+			w.add(glob, TokenGlob)
+			fmt.Printf("Added w: %#v c: %#v\n", w, c)
 			continue
 		}
 		w.addLiteral(string(r))
