@@ -5,7 +5,6 @@ package shellutils
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"strings"
 	"unicode"
@@ -224,7 +223,6 @@ processRune:
 				glob = glob + string(r)
 			}
 			w.add(glob, TokenGlob)
-			fmt.Printf("Added w: %#v c: %#v\n", w, c)
 			continue
 		}
 		w.addLiteral(string(r))
