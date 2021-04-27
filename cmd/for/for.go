@@ -153,11 +153,13 @@ func makeBlockFunc(g *goes.Goes, varName string,
 		g.EnvMap = make(map[string]string)
 	}
 	runfun := func(stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
-		for _, val := range wordList {
-			g.EnvMap[varName] = val.String()
-			err := runList(doList, stdin, stdout, stderr)
-			if err != nil {
-				fmt.Fprintln(stderr, err)
+		for _, word := range wordList {
+			for _, str := range word.Expand() {
+				g.EnvMap[varName] = str
+				err := runList(doList, stdin, stdout, stderr)
+				if err != nil {
+					fmt.Fprintln(stderr, err)
+				}
 			}
 		}
 		return nil
