@@ -97,8 +97,9 @@ Stop like this,
 	}
 */
 var (
-	Stop chan struct{}
-	WG   sync.WaitGroup
+	Stop   chan struct{}
+	IntSig chan os.Signal
+	WG     sync.WaitGroup
 )
 
 func (g *Goes) ProcessPipeline(ls shellutils.List) (*shellutils.List, *shellutils.Word, func(io.Reader, io.Writer, io.Writer) error, error) {
@@ -186,6 +187,18 @@ func (g *Goes) isRedirected(stdin io.Reader, stdout io.Writer, stderr io.Writer)
 		g.isStderrRedirected(stderr)
 }
 
+func (g *Goes) errOrInt(err error) error {
+	if err != nil {
+		return err
+	}
+	select {
+	case <-IntSig:
+		return fmt.Errorf("Command interrupted")
+	default:
+	}
+	return nil
+}
+
 func (g *Goes) ProcessCommand(cl shellutils.Cmdline, closers *[]io.Closer) (func(stdin io.Reader, stdout io.Writer, stderr io.Writer) error, error) {
 	runfun := func(stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
 		envMap, args := cl.Slice(func(k string) string {
@@ -213,7 +226,7 @@ func (g *Goes) ProcessCommand(cl shellutils.Cmdline, closers *[]io.Closer) (func
 		// check for function invocation
 
 		if f, x := g.FunctionMap[name]; x {
-			return f.RunFun(stdin, stdout, stderr)
+			return g.errOrInt(f.RunFun(stdin, stdout, stderr))
 		}
 		// check for built in command
 		if v := g.ByName[name]; v != nil {
@@ -233,7 +246,7 @@ func (g *Goes) ProcessCommand(cl shellutils.Cmdline, closers *[]io.Closer) (func
 				if method, found := v.(goeser); found {
 					method.Goes(g)
 				}
-				return g.Main(args...)
+				return g.errOrInt(g.Main(args...))
 			}
 		} else if builtin, found := g.Builtins()[name]; found {
 			return builtin(args[1:]...)
@@ -375,7 +388,7 @@ func (g *Goes) ProcessCommand(cl shellutils.Cmdline, closers *[]io.Closer) (func
 				}
 			}(x)
 		}
-		return nil
+		return g.errOrInt(nil)
 	}
 	return runfun, nil
 }
@@ -483,6 +496,8 @@ func (g *Goes) Main(args ...string) error {
 			args = args[1:]
 		}
 	}
+
+	IntSig = make(chan os.Signal, 1)
 
 	var v cmd.Cmd
 	var k cmd.Kind

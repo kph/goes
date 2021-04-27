@@ -207,8 +207,7 @@ func (c *Command) Main(args ...string) error {
 	if c.Stderr == nil {
 		c.Stderr = os.Stderr
 	}
-	csig := make(chan os.Signal, 1)
-	signal.Notify(csig, os.Interrupt)
+	signal.Notify(goes.IntSig, os.Interrupt)
 
 	defer func() {
 		for _, name := range c.g.Names() {
@@ -263,7 +262,7 @@ func (c *Command) Main(args ...string) error {
 readCommandLoop:
 	for {
 		select {
-		case <-csig:
+		case <-goes.IntSig:
 			fmt.Println("\nCommand interrupted")
 		default:
 		}
